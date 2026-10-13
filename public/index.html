@@ -3,11 +3,23 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <meta name="theme-color" content="#23251f" />
     <meta
       name="description"
       content="Compra y vende cerca de ti. Marketplace Lautaro conecta a personas y productos con una segunda historia."
     />
-    <title>Lautaro — Marketplace local</title>
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Lautaro" />
+    <meta property="og:title" content="Marketplace" />
+    <meta
+      property="og:description"
+      content="Compra y vende cerca de ti. Descubre productos con una nueva historia en tu comunidad."
+    />
+    <meta name="twitter:card" content="summary" />
+    <title>Marketplace</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/favicon.svg" />
     <link rel="stylesheet" href="/style.css" />
     <script src="/app.js" defer></script>
   </head>
@@ -22,7 +34,26 @@
           >●</span
         ></a
       >
-      <nav>
+      <button
+        id="menu-toggle"
+        class="menu-toggle"
+        type="button"
+        aria-label="Abrir menú"
+        aria-expanded="false"
+        aria-controls="main-nav"
+      >
+        <svg
+          viewBox="0 0 24 24"
+          aria-hidden="true"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+          stroke-linecap="round"
+        >
+          <path d="M4 7h16M4 12h16M4 17h16" />
+        </svg>
+      </button>
+      <nav id="main-nav">
         <button id="browse" class="nav-link">Explorar</button
         ><button id="mine" class="nav-link" hidden>Mis publicaciones</button
         ><button id="favorites-nav" class="nav-link">Favoritos</button
@@ -43,31 +74,108 @@
             Descubre productos con una nueva historia.<br />Compra y vende entre
             personas de tu comunidad.
           </p>
-          <div class="hero-note">
-            <span
-              ><svg
-                viewBox="0 0 24 24"
-                aria-hidden="true"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.6"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              >
-                <path d="M5 19 19 5M5 5h14v14" /></svg
-            ></span>
-            Menos vueltas. Más encuentros.
+          <ul class="hero-points">
+            <li>
+              <span class="point-icon" aria-hidden="true">✓</span> Publica gratis
+            </li>
+            <li>
+              <span class="point-icon" aria-hidden="true">✓</span> Contacto
+              directo
+            </li>
+            <li>
+              <span class="point-icon" aria-hidden="true">✓</span> Sin comisiones
+            </li>
+          </ul>
+          <div class="hero-actions">
+            <button class="button dark" id="hero-browse">
+              Explorar productos
+              <span aria-hidden="true"
+                ><svg
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.6"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="M5 19 19 5M5 5h14v14" /></svg
+              ></span>
+            </button>
+            <button class="button outline" id="hero-publish">
+              Quiero vender
+            </button>
           </div>
         </div>
         <div class="hero-art" aria-hidden="true">
           <div class="art-grid"></div>
-          <div class="sun"></div>
-          <div class="abstract-vase"></div>
-          <div class="art-label">
-            <span class="tiny-star">✦</span>
-            <div>
-              Objetos únicos.<br /><strong>Nuevas posibilidades.</strong>
-            </div>
+          <div class="glow"></div>
+          <div class="showcase">
+            <article class="showcase-card showcase-card--a">
+              <div class="showcase-thumb thumb-green">
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.4"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <circle cx="5.5" cy="17.5" r="3.5" />
+                  <circle cx="18.5" cy="17.5" r="3.5" />
+                  <path d="M2 17.5h2m3 0h7m6 0h2M15 17.5 12 7h-2" />
+                </svg>
+              </div>
+              <div class="showcase-body">
+                <span class="showcase-tag">Deportes</span>
+                <strong>Bicicleta urbana</strong>
+                <span class="showcase-price">$85.000</span>
+              </div>
+            </article>
+            <article class="showcase-card showcase-card--b">
+              <div class="showcase-thumb thumb-clay">
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.4"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="M9 3h6l-1 5h3l-6 13L6 8h3L9 3Z" />
+                </svg>
+              </div>
+              <div class="showcase-body">
+                <span class="showcase-tag">Hogar</span>
+                <strong>Lámpara de pie</strong>
+                <span class="showcase-price">$24.000</span>
+              </div>
+            </article>
+            <article class="showcase-card showcase-card--c">
+              <div class="showcase-thumb thumb-slate">
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.4"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="M4 13a8 8 0 0 1 16 0M8 15v2a2 2 0 0 1-4 0v-1a2 2 0 0 1 2-2Zm8 0a2 2 0 0 1 2 2v1a2 2 0 0 1-4 0v-2Z" />
+                </svg>
+              </div>
+              <div class="showcase-body">
+                <span class="showcase-tag">Tecnología</span>
+                <strong>Audífonos</strong>
+                <span class="showcase-price">$39.990</span>
+              </div>
+            </article>
+          </div>
+          <div class="float-badge float-badge--1">
+            <span class="float-dot"></span> Publicado hace 2 h
+          </div>
+          <div class="float-badge float-badge--2">
+            <span class="float-heart" aria-hidden="true">♥</span> 12 guardados
           </div>
           <span class="art-caption">DALE UNA SEGUNDA HISTORIA</span>
         </div>
@@ -171,6 +279,9 @@
           <button class="button outline" id="retry">Volver a intentar</button>
         </div>
         <div id="products" class="products" aria-live="polite"></div>
+        <div id="load-more-wrap" class="load-more-wrap" hidden>
+          <button id="load-more" class="button outline">Ver más productos</button>
+        </div>
         <div id="empty" class="empty" hidden>
           <span>✦</span>
           <h3>Aquí comienza una nueva historia</h3>
@@ -339,7 +450,8 @@
             minlength="10"
             maxlength="2000"
             required
-          ></textarea></label
+          ></textarea
+          ><small id="description-count" class="char-count">0/2000</small></label
         ><label
           >URL de la foto <span class="muted">(opcional)</span
           ><input

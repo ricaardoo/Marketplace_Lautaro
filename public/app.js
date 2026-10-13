@@ -33,6 +33,8 @@ const icons = {
   Vehículos:
     '<path d="m5 7 2-4h10l2 4 2 5v6H3v-6l2-5ZM5 7h14M7 18v3M17 18v3M6 13h2M16 13h2"/>',
   Otros: '<path d="m12 3 9 9-9 9-9-9 9-9Z"/>',
+  share:
+    '<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.6 10.6 6.8-4.2M8.6 13.4l6.8 4.2"/>',
 };
 const icon = (name) =>
   `<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${icons[name] || icons.box}</svg>`;
@@ -49,7 +51,9 @@ let user = null,
   view = "browse",
   register = false,
   products = [],
+  totalProducts = 0,
   requestVersion = 0;
+const PAGE_SIZE = 24;
 let editing = null,
   detailId = null,
   deleteId = null,
@@ -158,10 +162,31 @@ function renderProducts() {
     .join("");
   imageFallback($("#products"));
 }
-async function loadProducts() {
+function renderSkeletons() {
+  $("#products").innerHTML = Array.from(
+    { length: 8 },
+    () =>
+      '<div class="skeleton-card"><div class="skeleton-block skeleton-image"></div><div class="skeleton-block skeleton-line"></div><div class="skeleton-block skeleton-line short"></div></div>',
+  ).join("");
+}
+function updateCount() {
+  const shown = products.length;
+  const noun = totalProducts === 1 ? "producto" : "productos";
+  $("#count").textContent =
+    totalProducts > shown
+      ? `Mostrando ${shown} de ${totalProducts} ${noun}`
+      : `${shown} ${noun}`;
+}
+async function loadProducts({ append = false } = {}) {
   const version = ++requestVersion;
   $("#load-error").hidden = true;
-  $("#loading").hidden = false;
+  if (append) {
+    $("#load-more").disabled = true;
+  } else {
+    $("#loading").hidden = true;
+    $("#load-more-wrap").hidden = true;
+    renderSkeletons();
+  }
   $("#products").setAttribute("aria-busy", "true");
   $("#catalog-title").textContent = {
     browse: "Explora el marketplace",
@@ -177,15 +202,25 @@ async function loadProducts() {
     ["browse", "browse"],
     ["mine", "mine"],
     ["favorites-nav", "favorites"],
-  ])
-    $(`#${id}`).classList.toggle("active", view === v);
+  ]) {
+    const el = $(`#${id}`);
+    el.classList.toggle("active", view === v);
+    if (view === v) el.setAttribute("aria-current", "page");
+    else el.removeAttribute("aria-current");
+  }
   renderCategories();
+  const params = filterParams();
+  params.set("limit", PAGE_SIZE);
+  params.set("offset", append ? products.length : 0);
   try {
-    const result = await api(`/api/listings?${filterParams()}`);
+    const [result, count] = await Promise.all([
+      api(`/api/listings?${params}`),
+      api(`/api/listings/count?${filterParams()}`),
+    ]);
     if (version !== requestVersion) return;
-    products = result;
-    $("#count").textContent =
-      `${products.length} ${products.length === 1 ? "producto" : "productos"}${products.length === 200 ? " · primeros 200 resultados" : ""}`;
+    totalProducts = count.total;
+    products = append ? products.concat(result) : result;
+    updateCount();
     renderProducts();
     $("#empty").hidden = products.length > 0;
     const filtered =
@@ -209,17 +244,25 @@ async function loadProducts() {
           : "Todavía no hay productos. Sé la primera persona en publicar.";
     $("#empty-publish").textContent =
       view === "favorites" ? "Explorar productos" : "Publicar un producto";
+    $("#load-more-wrap").hidden =
+      products.length >= totalProducts || products.length === 0;
   } catch (error) {
     if (version !== requestVersion) return;
-    $("#products").replaceChildren();
-    $("#empty").hidden = true;
-    $("#count").textContent = "";
-    $("#load-error-text").textContent = error.message;
-    $("#load-error").hidden = false;
+    if (append) {
+      toast(error.message);
+    } else {
+      $("#products").replaceChildren();
+      $("#empty").hidden = true;
+      $("#count").textContent = "";
+      $("#load-error-text").textContent = error.message;
+      $("#load-error").hidden = false;
+      $("#load-more-wrap").hidden = true;
+    }
   } finally {
     if (version === requestVersion) {
       $("#loading").hidden = true;
       $("#products").setAttribute("aria-busy", "false");
+      $("#load-more").disabled = false;
     }
   }
 }
@@ -254,9 +297,14 @@ function openPublish(product = null) {
         "condition",
       ])
         $("#publish-form").elements[key].value = product[key];
+    updateDescriptionCount();
     $("#image-preview").hidden = true;
     $("#publish-dialog").showModal();
   });
+}
+function updateDescriptionCount() {
+  const field = $("#publish-form [name=description]");
+  $("#description-count").textContent = `${field.value.length}/2000`;
 }
 function setView(next) {
   const action = () => {
@@ -329,19 +377,39 @@ async function changeStatus(id) {
 }
 function detail(id) {
   const p = products.find((p) => p.id === id);
-  if (!p) return;
-  detailId = id;
+  if (p) openDetail(p);
+}
+async function shareListing(p) {
+  const url = `${location.origin}/?producto=${p.id}`;
+  try {
+    if (navigator.share) {
+      await navigator.share({
+        title: p.title,
+        text: `${p.title} · ${money.format(p.price)}`,
+        url,
+      });
+      return;
+    }
+    await navigator.clipboard.writeText(url);
+    toast("Enlace copiado al portapapeles.");
+  } catch {
+    /* La persona canceló el diálogo de compartir. */
+  }
+}
+function openDetail(p) {
+  detailId = p.id;
   const owner = user && p.user_id === user.id;
   $("#detail-content").innerHTML =
-    `<div class="detail-image">${imageMarkup(p)}</div><div class="detail-meta"><span class="eyebrow">${escape(p.category)} · ${escape(p.city)}</span><span class="condition-badge">${p.status === "sold" ? "Vendido" : escape(p.condition)}</span></div><h2>${escape(p.title)}</h2><strong class="detail-price">${money.format(p.price)}</strong><p class="published-date">Publicado el ${date.format(new Date(p.created_at * 1000))}</p><h3 class="detail-subtitle">Sobre este producto</h3><p class="description">${escape(p.description)}</p><div class="seller"><span class="avatar">${escape(p.seller.slice(0, 1).toUpperCase())}</span><div><small>Publicado por</small><strong>${escape(p.seller)}</strong></div></div>${p.status !== "sold" ? `<a class="button dark full" href="mailto:${encodeURIComponent(p.contact)}?subject=${encodeURIComponent("Consulta por " + p.title)}">Contactar al vendedor ${icon("arrow")}</a>` : '<p class="contact-note">Este producto ya fue vendido.</p>'}<p class="safety-note">Revisa el producto y acuerda la entrega antes de pagar. Lautaro no procesa pagos.</p>${owner ? '<div class="dialog-actions"><button class="button outline" id="edit-listing">Editar producto</button><button class="button outline" id="delete-listing">Eliminar</button></div>' : ""}`;
+    `<div class="detail-image">${imageMarkup(p)}</div><div class="detail-meta"><span class="eyebrow">${escape(p.category)} · ${escape(p.city)}</span><span class="condition-badge">${p.status === "sold" ? "Vendido" : escape(p.condition)}</span></div><h2>${escape(p.title)}</h2><strong class="detail-price">${money.format(p.price)}</strong><p class="published-date">Publicado el ${date.format(new Date(p.created_at * 1000))}</p><h3 class="detail-subtitle">Sobre este producto</h3><p class="description">${escape(p.description)}</p><div class="seller"><span class="avatar">${escape(p.seller.slice(0, 1).toUpperCase())}</span><div><small>Publicado por</small><strong>${escape(p.seller)}</strong></div></div>${p.status !== "sold" ? `<a class="button dark full" href="mailto:${encodeURIComponent(p.contact)}?subject=${encodeURIComponent("Consulta por " + p.title)}">Contactar al vendedor ${icon("arrow")}</a>` : '<p class="contact-note">Este producto ya fue vendido.</p>'}<div class="detail-actions"><button type="button" class="button outline" id="share-listing">Compartir enlace ${icon("share")}</button></div><p class="safety-note">Revisa el producto y acuerda la entrega antes de pagar. Lautaro no procesa pagos.</p>${owner ? '<div class="dialog-actions"><button class="button outline" id="edit-listing">Editar producto</button><button class="button outline" id="delete-listing">Eliminar</button></div>' : ""}`;
   imageFallback($("#detail-content"));
   $("#detail-dialog").showModal();
+  $("#share-listing")?.addEventListener("click", () => shareListing(p));
   $("#edit-listing")?.addEventListener("click", () => {
     $("#detail-dialog").close();
     openPublish(p);
   });
   $("#delete-listing")?.addEventListener("click", () => {
-    deleteId = id;
+    deleteId = p.id;
     $("#confirm-error").textContent = "";
     $("#confirm-dialog").showModal();
   });
@@ -520,6 +588,51 @@ $("#publish-form [name=image]").addEventListener("change", (e) => {
   $("#image-preview").hidden = false;
   imageFallback($("#image-preview"));
 });
+$("#publish-form [name=description]").addEventListener(
+  "input",
+  updateDescriptionCount,
+);
+$("#load-more").addEventListener("click", () =>
+  loadProducts({ append: true }),
+);
+document.querySelectorAll("dialog").forEach((dialog) =>
+  dialog.addEventListener("click", (event) => {
+    if (event.target === dialog) dialog.close();
+  }),
+);
+const menuToggle = $("#menu-toggle");
+const mainNav = $("#main-nav");
+function closeMenu() {
+  if (!mainNav.classList.contains("open")) return;
+  mainNav.classList.remove("open");
+  menuToggle.setAttribute("aria-expanded", "false");
+  menuToggle.setAttribute("aria-label", "Abrir menú");
+}
+menuToggle.addEventListener("click", () => {
+  const open = mainNav.classList.toggle("open");
+  menuToggle.setAttribute("aria-expanded", String(open));
+  menuToggle.setAttribute(
+    "aria-label",
+    open ? "Cerrar menú" : "Abrir menú",
+  );
+});
+mainNav.addEventListener("click", (event) => {
+  if (event.target.closest("button")) closeMenu();
+});
+document.addEventListener("click", (event) => {
+  if (
+    mainNav.classList.contains("open") &&
+    !event.target.closest("#main-nav") &&
+    !event.target.closest("#menu-toggle")
+  )
+    closeMenu();
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") closeMenu();
+});
+window.addEventListener("resize", () => {
+  if (window.innerWidth > 800) closeMenu();
+});
 (async () => {
   try {
     user = await api("/api/me");
@@ -528,4 +641,12 @@ $("#publish-form [name=image]").addEventListener("change", (e) => {
     toast(error.message);
   }
   await Promise.all([loadProducts(), loadStats()]);
+  const deepLink = new URLSearchParams(location.search).get("producto");
+  if (deepLink && /^\d+$/.test(deepLink)) {
+    try {
+      openDetail(await api(`/api/listings/${deepLink}`));
+    } catch {
+      /* El producto enlazado ya no está disponible. */
+    }
+  }
 })();

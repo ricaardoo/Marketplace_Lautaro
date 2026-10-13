@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Lautaro">
+  <rect width="64" height="64" rx="16" fill="#23251f"/>
+  <text x="32" y="45" text-anchor="middle" font-family="Georgia, serif" font-size="40" font-weight="700" fill="#faf9f5">L</text>
+  <circle cx="46" cy="45" r="5" fill="#809454"/>
+</svg>

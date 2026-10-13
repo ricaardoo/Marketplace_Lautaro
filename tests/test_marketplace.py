@@ -17,7 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 class MarketplaceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.temp = tempfile.TemporaryDirectory()
+        cls.temp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         with socket.socket() as sock:
             sock.bind(('127.0.0.1', 0))
             cls.port = sock.getsockname()[1]
@@ -148,7 +148,7 @@ class MarketplaceTests(unittest.TestCase):
 
     def test_migration_preserves_existing_database(self):
         import sqlite3
-        with tempfile.TemporaryDirectory() as directory:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as directory:
             db_path = Path(directory) / 'legacy.sqlite3'
             with sqlite3.connect(db_path) as db:
                 db.executescript("""
@@ -166,6 +166,29 @@ class MarketplaceTests(unittest.TestCase):
                 row = db.execute('SELECT title,condition,status FROM listings').fetchone()
                 self.assertEqual(row, ('Producto original', 'Usado', 'active'))
                 self.assertEqual(db.execute('SELECT name FROM users').fetchone()[0], 'Original')
+
+    def test_pagination_count_and_detail_endpoint(self):
+        owner, visitor = self.client(), self.client()
+        credentials = {'name': 'Paginador', 'email': 'pager@example.test', 'password': 'UnaClaveSegura123'}
+        self.assertEqual(self.request(owner, '/api/register', 'POST', credentials)[0], 200)
+        ids = [self.request(owner, '/api/listings', 'POST', {
+            'title': f'Producto {index}', 'description': 'Descripción suficiente para el anuncio.',
+            'price': 1000 + index, 'category': 'Hogar', 'city': 'Lautaro', 'image': ''})[1]['id']
+            for index in range(5)]
+        self.assertEqual(self.request(visitor, '/api/listings/count')[1], {'total': 5})
+        first = self.request(visitor, '/api/listings?sort=price_asc&limit=2&offset=0')[1]
+        second = self.request(visitor, '/api/listings?sort=price_asc&limit=2&offset=2')[1]
+        self.assertEqual(len(first), 2)
+        self.assertEqual(len(second), 2)
+        self.assertFalse({row['id'] for row in first} & {row['id'] for row in second})
+        self.assertEqual(self.request(visitor, '/api/listings?limit=abc')[0], 400)
+        self.assertEqual(self.request(visitor, '/api/listings/count?mine=1')[0], 401)
+        status, detail = self.request(visitor, f'/api/listings/{ids[0]}')
+        self.assertEqual(status, 200)
+        self.assertEqual(detail['title'], 'Producto 0')
+        self.assertEqual(self.request(visitor, '/api/listings/999999')[0], 404)
+        for listing_id in ids:
+            self.request(owner, f'/api/listings/{listing_id}', 'DELETE')
 
     def test_z_authentication_rate_limit(self):
         client = self.client()

@@ -25,7 +25,8 @@ HOST=0.0.0.0 PORT=8000 python3 server.py
 ## Funciones
 
 - Registro, inicio y cierre de sesión con cookies HttpOnly y contraseñas protegidas con scrypt.
-- Catálogo público con búsqueda, filtros por categoría, ciudad exacta, condición y rango de precios; orden por fecha o precio.
+- Catálogo público paginado con búsqueda, filtros por categoría, ciudad exacta, condición y rango de precios; orden por fecha o precio.
+- Enlace directo y para compartir cada producto (`/?producto=ID`) con botón de compartir en el detalle.
 - Favoritos guardados en la cuenta y persistentes entre sesiones.
 - Estadísticas reales de productos disponibles, vendedores y ciudades.
 - Publicación y edición con precio, descripción, ciudad, condición y URL HTTPS de foto opcional con vista previa.
@@ -56,7 +57,7 @@ Puedes indicar el ejecutable de Chromium mediante `CHROMIUM_PATH`; en Linux util
 
 ## Actualización y datos
 
-Al iniciar, las bases existentes se actualizan automáticamente para agregar condición, estado y favoritos. Los productos anteriores conservan sus datos y aparecen como usados y disponibles. La migración es repetible. Las consultas muestran hasta 200 resultados y la interfaz indica cuando se alcanza ese límite.
+Al iniciar, las bases existentes se actualizan automáticamente para agregar condición, estado y favoritos. Los productos anteriores conservan sus datos y aparecen como usados y disponibles. La migración es repetible. El catálogo se carga en páginas de 24 resultados con el botón «Ver más productos» y muestra el total disponible.
 
 Antes de actualizar, respalda SQLite usando su API de backup (incluye cambios pendientes en WAL):
 

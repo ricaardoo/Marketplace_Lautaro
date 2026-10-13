@@ -108,6 +108,49 @@ class Handler(BaseHTTPRequestHandler):
         secure = '; Secure' if os.environ.get('COOKIE_SECURE') == '1' else ''
         self.reply(200, dict(user), f'session={token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=604800{secure}')
 
+    def listing_filters(self, query, user):
+        value = lambda key: query.get(key, [''])[0]
+        conditions, params = [], []
+        search = value('q')[:200].strip()
+        if search:
+            conditions.append('(l.title LIKE ? OR l.description LIKE ? OR l.city LIKE ?)')
+            params.extend(['%' + search + '%'] * 3)
+        for field in ('category', 'city', 'condition'):
+            if value(field):
+                conditions.append(f'l.{field}=?')
+                params.append(value(field))
+        if value('mine') == '1' or value('favorites') == '1':
+            if not user:
+                raise PermissionError('Inicia sesión para ver esta sección.')
+            if value('mine') == '1':
+                conditions.append('l.user_id=?')
+                params.append(user['id'])
+            else:
+                conditions.append('EXISTS(SELECT 1 FROM favorites f WHERE f.listing_id=l.id AND f.user_id=?)')
+                params.append(user['id'])
+        else:
+            conditions.append("l.status='active'")
+        for key, operator in [('min_price', '>='), ('max_price', '<=')]:
+            if value(key):
+                price = int(value(key))
+                if price < 0 or price > 1000000000:
+                    raise ValueError('Precio fuera de rango.')
+                conditions.append(f'l.price {operator} ?')
+                params.append(price)
+        if value('min_price') and value('max_price') and int(value('min_price')) > int(value('max_price')):
+            raise ValueError('El precio mínimo no puede superar el máximo.')
+        orders = {'recent': 'l.created_at DESC,l.id DESC', 'price_asc': 'l.price ASC,l.id DESC',
+                  'price_desc': 'l.price DESC,l.id DESC'}
+        order = orders.get(value('sort') or 'recent')
+        if not order:
+            raise ValueError('Orden no válido.')
+        return conditions, params, order, value
+
+    listing_select = ('SELECT l.*,u.name AS seller,u.email AS contact, '
+                      'EXISTS(SELECT 1 FROM favorites f WHERE f.listing_id=l.id AND f.user_id=?) AS favorite, '
+                      '(SELECT COUNT(*) FROM favorites f2 WHERE f2.listing_id=l.id) AS favorite_count '
+                      'FROM listings l JOIN users u ON u.id=l.user_id')
+
     def do_GET(self):
         url = urlsplit(self.path)
         if url.path.startswith('/api/'):
@@ -120,66 +163,46 @@ class Handler(BaseHTTPRequestHandler):
                         'listings': db.execute("SELECT COUNT(*) FROM listings WHERE status='active'").fetchone()[0],
                         'sellers': db.execute("SELECT COUNT(DISTINCT user_id) FROM listings WHERE status='active'").fetchone()[0],
                         'cities': db.execute("SELECT COUNT(DISTINCT city) FROM listings WHERE status='active'").fetchone()[0]})
-                if url.path == '/api/listings':
+                listing_match = re.fullmatch(r'/api/listings/(\d+)', url.path)
+                if listing_match:
+                    user = self.current_user(db)
+                    uid = user['id'] if user else 0
+                    row = db.execute(self.listing_select + ' WHERE l.id=?', (uid, int(listing_match[1]))).fetchone()
+                    if not row:
+                        return self.reply(404, {'error': 'Producto no encontrado.'})
+                    return self.reply(200, dict(row))
+                if url.path in ('/api/listings', '/api/listings/count'):
                     try:
                         query = parse_qs(url.query)
-                        value = lambda key: query.get(key, [''])[0]
                         user = self.current_user(db)
                         uid = user['id'] if user else 0
-                        conditions, params = [], []
-                        search = value('q')[:200].strip()
-                        if search:
-                            conditions.append('(l.title LIKE ? OR l.description LIKE ? OR l.city LIKE ?)')
-                            params.extend(['%' + search + '%'] * 3)
-                        for field in ('category', 'city', 'condition'):
-                            if value(field):
-                                conditions.append(f'l.{field}=?')
-                                params.append(value(field))
-                        if value('mine') == '1' or value('favorites') == '1':
-                            if not user:
-                                return self.reply(401, {'error': 'Inicia sesión para ver esta sección.'})
-                            if value('mine') == '1':
-                                conditions.append('l.user_id=?')
-                                params.append(uid)
-                            else:
-                                conditions.append('EXISTS(SELECT 1 FROM favorites f WHERE f.listing_id=l.id AND f.user_id=?)')
-                                params.append(uid)
-                        else:
-                            conditions.append("l.status='active'")
-                        for key, operator in [('min_price', '>='), ('max_price', '<=')]:
-                            if value(key):
-                                price = int(value(key))
-                                if price < 0 or price > 1000000000:
-                                    raise ValueError('Precio fuera de rango.')
-                                conditions.append(f'l.price {operator} ?')
-                                params.append(price)
-                        if value('min_price') and value('max_price') and int(value('min_price')) > int(value('max_price')):
-                            raise ValueError('El precio mínimo no puede superar el máximo.')
-                        orders = {'recent': 'l.created_at DESC,l.id DESC', 'price_asc': 'l.price ASC,l.id DESC',
-                                  'price_desc': 'l.price DESC,l.id DESC'}
-                        order = orders.get(value('sort') or 'recent')
-                        if not order:
-                            raise ValueError('Orden no válido.')
+                        conditions, params, order, value = self.listing_filters(query, user)
                         where = ' WHERE ' + ' AND '.join(conditions) if conditions else ''
-                        rows = db.execute('SELECT l.*,u.name AS seller,u.email AS contact, '
-                                          'EXISTS(SELECT 1 FROM favorites f WHERE f.listing_id=l.id AND f.user_id=?) AS favorite '
-                                          'FROM listings l JOIN users u ON u.id=l.user_id' + where +
-                                          ' ORDER BY ' + order + ' LIMIT 200', [uid, *params]).fetchall()
+                        if url.path == '/api/listings/count':
+                            total = db.execute('SELECT COUNT(*) FROM listings l' + where, params).fetchone()[0]
+                            return self.reply(200, {'total': total})
+                        limit = min(max(int(value('limit') or 200), 1), 200)
+                        offset = max(int(value('offset') or 0), 0)
+                        rows = db.execute(self.listing_select + where + ' ORDER BY ' + order +
+                                          ' LIMIT ? OFFSET ?', [uid, *params, limit, offset]).fetchall()
                         return self.reply(200, [dict(row) for row in rows])
+                    except PermissionError as error:
+                        return self.reply(401, {'error': str(error)})
                     except ValueError as error:
                         return self.reply(400, {'error': str(error)})
             return self.reply(404, {'error': 'Ruta no encontrada.'})
-        files = {'/': 'index.html', '/app.js': 'app.js', '/style.css': 'style.css'}
+        files = {'/': 'index.html', '/app.js': 'app.js', '/style.css': 'style.css', '/favicon.svg': 'favicon.svg'}
         name = files.get(url.path)
         if not name:
             return self.reply(404, {'error': 'Página no encontrada.'})
         body = (ROOT / 'public' / name).read_bytes()
         self.send_response(200)
         self.send_header('Content-Type', {'html': 'text/html; charset=utf-8', 'js': 'text/javascript; charset=utf-8',
-                                         'css': 'text/css; charset=utf-8'}[name.rsplit('.', 1)[1]])
+                                         'css': 'text/css; charset=utf-8', 'svg': 'image/svg+xml'}[name.rsplit('.', 1)[1]])
         self.send_header('Content-Length', str(len(body)))
         self.send_header('X-Content-Type-Options', 'nosniff')
         self.send_header('Referrer-Policy', 'no-referrer')
+        self.send_header('Cache-Control', 'no-cache' if name == 'index.html' else 'public, max-age=3600')
         self.send_header('Content-Security-Policy', "default-src 'self'; img-src 'self' https:; style-src 'self'; script-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'")
         self.end_headers()
         self.wfile.write(body)
