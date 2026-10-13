@@ -8,12 +8,17 @@ import re
 import secrets
 import sqlite3
 import time
+import threading
+from collections import defaultdict, deque
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlsplit
 
 ROOT = Path(__file__).resolve().parent
 DB = Path(os.environ.get('MARKETPLACE_DB', str(ROOT / '.data/marketplace.sqlite3')))
+AUTH_ATTEMPTS = defaultdict(deque)
+AUTH_LOCK = threading.Lock()
+
 CATEGORIES = ['Tecnología', 'Hogar', 'Moda', 'Deportes', 'Vehículos', 'Otros']
 
 
@@ -27,6 +32,7 @@ def connect():
 def initialize():
     DB.parent.mkdir(parents=True, exist_ok=True)
     with connect() as db:
+        db.execute('PRAGMA journal_mode=WAL')
         db.executescript('''
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY, name TEXT NOT NULL, email TEXT UNIQUE NOT NULL,
@@ -38,7 +44,18 @@ def initialize():
                 title TEXT NOT NULL, description TEXT NOT NULL, price INTEGER NOT NULL,
                 category TEXT NOT NULL, city TEXT NOT NULL, image TEXT NOT NULL,
                 created_at INTEGER NOT NULL);
+            CREATE TABLE IF NOT EXISTS favorites (
+                user_id INTEGER NOT NULL REFERENCES users(id),
+                listing_id INTEGER NOT NULL REFERENCES listings(id) ON DELETE CASCADE,
+                PRIMARY KEY(user_id, listing_id));
+            CREATE INDEX IF NOT EXISTS listings_owner ON listings(user_id);
+            CREATE INDEX IF NOT EXISTS sessions_expiration ON sessions(expires);
         ''')
+        columns = {row['name'] for row in db.execute('PRAGMA table_info(listings)')}
+        if 'condition' not in columns:
+            db.execute("ALTER TABLE listings ADD COLUMN condition TEXT NOT NULL DEFAULT 'Usado'")
+        if 'status' not in columns:
+            db.execute("ALTER TABLE listings ADD COLUMN status TEXT NOT NULL DEFAULT 'active'")
 
 
 def password_hash(password, salt):
@@ -98,28 +115,59 @@ class Handler(BaseHTTPRequestHandler):
                 if url.path == '/api/me':
                     user = self.current_user(db)
                     return self.reply(200, dict(user) if user else None)
+                if url.path == '/api/stats':
+                    return self.reply(200, {
+                        'listings': db.execute("SELECT COUNT(*) FROM listings WHERE status='active'").fetchone()[0],
+                        'sellers': db.execute("SELECT COUNT(DISTINCT user_id) FROM listings WHERE status='active'").fetchone()[0],
+                        'cities': db.execute("SELECT COUNT(DISTINCT city) FROM listings WHERE status='active'").fetchone()[0]})
                 if url.path == '/api/listings':
-                    query = parse_qs(url.query)
-                    conditions, params = [], []
-                    search = query.get('q', [''])[0][:200].strip()
-                    if search:
-                        conditions.append('(l.title LIKE ? OR l.description LIKE ? OR l.city LIKE ?)')
-                        params.extend(['%' + search + '%'] * 3)
-                    category = query.get('category', [''])[0]
-                    if category:
-                        conditions.append('l.category=?')
-                        params.append(category)
-                    if query.get('mine', [''])[0] == '1':
+                    try:
+                        query = parse_qs(url.query)
+                        value = lambda key: query.get(key, [''])[0]
                         user = self.current_user(db)
-                        if not user:
-                            return self.reply(401, {'error': 'Inicia sesión para ver tus publicaciones.'})
-                        conditions.append('l.user_id=?')
-                        params.append(user['id'])
-                    where = ' WHERE ' + ' AND '.join(conditions) if conditions else ''
-                    rows = db.execute('SELECT l.*,u.name AS seller,u.email AS contact FROM listings l '
-                                      'JOIN users u ON u.id=l.user_id' + where +
-                                      ' ORDER BY l.created_at DESC,l.id DESC LIMIT 200', params).fetchall()
-                    return self.reply(200, [dict(row) for row in rows])
+                        uid = user['id'] if user else 0
+                        conditions, params = [], []
+                        search = value('q')[:200].strip()
+                        if search:
+                            conditions.append('(l.title LIKE ? OR l.description LIKE ? OR l.city LIKE ?)')
+                            params.extend(['%' + search + '%'] * 3)
+                        for field in ('category', 'city', 'condition'):
+                            if value(field):
+                                conditions.append(f'l.{field}=?')
+                                params.append(value(field))
+                        if value('mine') == '1' or value('favorites') == '1':
+                            if not user:
+                                return self.reply(401, {'error': 'Inicia sesión para ver esta sección.'})
+                            if value('mine') == '1':
+                                conditions.append('l.user_id=?')
+                                params.append(uid)
+                            else:
+                                conditions.append('EXISTS(SELECT 1 FROM favorites f WHERE f.listing_id=l.id AND f.user_id=?)')
+                                params.append(uid)
+                        else:
+                            conditions.append("l.status='active'")
+                        for key, operator in [('min_price', '>='), ('max_price', '<=')]:
+                            if value(key):
+                                price = int(value(key))
+                                if price < 0 or price > 1000000000:
+                                    raise ValueError('Precio fuera de rango.')
+                                conditions.append(f'l.price {operator} ?')
+                                params.append(price)
+                        if value('min_price') and value('max_price') and int(value('min_price')) > int(value('max_price')):
+                            raise ValueError('El precio mínimo no puede superar el máximo.')
+                        orders = {'recent': 'l.created_at DESC,l.id DESC', 'price_asc': 'l.price ASC,l.id DESC',
+                                  'price_desc': 'l.price DESC,l.id DESC'}
+                        order = orders.get(value('sort') or 'recent')
+                        if not order:
+                            raise ValueError('Orden no válido.')
+                        where = ' WHERE ' + ' AND '.join(conditions) if conditions else ''
+                        rows = db.execute('SELECT l.*,u.name AS seller,u.email AS contact, '
+                                          'EXISTS(SELECT 1 FROM favorites f WHERE f.listing_id=l.id AND f.user_id=?) AS favorite '
+                                          'FROM listings l JOIN users u ON u.id=l.user_id' + where +
+                                          ' ORDER BY ' + order + ' LIMIT 200', [uid, *params]).fetchall()
+                        return self.reply(200, [dict(row) for row in rows])
+                    except ValueError as error:
+                        return self.reply(400, {'error': str(error)})
             return self.reply(404, {'error': 'Ruta no encontrada.'})
         files = {'/': 'index.html', '/app.js': 'app.js', '/style.css': 'style.css'}
         name = files.get(url.path)
@@ -139,6 +187,9 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         self.mutate()
 
+    def do_PATCH(self):
+        self.mutate()
+
     def do_DELETE(self):
         self.mutate()
 
@@ -152,7 +203,7 @@ class Handler(BaseHTTPRequestHandler):
             length = int(self.headers.get('Content-Length', '0'))
             if length < 0 or length > 20000:
                 return self.reply(413, {'error': 'Solicitud demasiado grande.'})
-            if self.command == 'POST' and self.headers.get('Content-Type', '').split(';')[0] != 'application/json':
+            if self.command in ('POST', 'PATCH') and self.headers.get('Content-Type', '').split(';')[0] != 'application/json':
                 return self.reply(415, {'error': 'Se requiere JSON.'})
             data = json.loads(self.rfile.read(length) or b'{}')
             if not isinstance(data, dict):
@@ -160,6 +211,19 @@ class Handler(BaseHTTPRequestHandler):
             path = urlsplit(self.path).path
             with connect() as db:
                 if path in ('/api/register', '/api/login') and self.command == 'POST':
+                    # Per-client limit, using the socket address rather than untrusted forwarded headers.
+                    with AUTH_LOCK:
+                        now = time.monotonic()
+                        for address in list(AUTH_ATTEMPTS):
+                            attempts = AUTH_ATTEMPTS[address]
+                            while attempts and attempts[0] < now - 300:
+                                attempts.popleft()
+                            if not attempts:
+                                del AUTH_ATTEMPTS[address]
+                        attempts = AUTH_ATTEMPTS[self.client_address[0]]
+                        if len(attempts) >= 20:
+                            return self.reply(429, {'error': 'Demasiados intentos. Espera cinco minutos e inténtalo otra vez.'})
+                        attempts.append(now)
                     email = clean(data, 'email', 5, 254).lower()
                     if not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+', email):
                         raise ValueError('Introduce un correo válido.')
@@ -193,7 +257,31 @@ class Handler(BaseHTTPRequestHandler):
                 user = self.current_user(db)
                 if not user:
                     return self.reply(401, {'error': 'Inicia sesión para continuar.'})
-                if path == '/api/listings' and self.command == 'POST':
+                if path == '/api/profile' and self.command == 'PATCH':
+                    name = clean(data, 'name', 2, 60)
+                    db.execute('UPDATE users SET name=? WHERE id=?', (name, user['id']))
+                    db.commit()
+                    return self.reply(200, {'id': user['id'], 'name': name, 'email': user['email']})
+                favorite_match = re.fullmatch(r'/api/favorites/(\d+)', path)
+                if favorite_match and self.command in ('POST', 'DELETE'):
+                    listing_id = int(favorite_match[1])
+                    if not db.execute('SELECT id FROM listings WHERE id=?', (listing_id,)).fetchone():
+                        return self.reply(404, {'error': 'El producto ya no está disponible.'})
+                    if self.command == 'POST':
+                        db.execute('INSERT OR IGNORE INTO favorites VALUES(?,?)', (user['id'], listing_id))
+                    else:
+                        db.execute('DELETE FROM favorites WHERE user_id=? AND listing_id=?', (user['id'], listing_id))
+                    db.commit()
+                    return self.reply(200, {'ok': True})
+                listing_match = re.fullmatch(r'/api/listings/(\d+)', path)
+                if path == '/api/listings' and self.command == 'POST' or listing_match and self.command == 'PATCH':
+                    existing = None
+                    if listing_match:
+                        existing = db.execute('SELECT * FROM listings WHERE id=? AND user_id=?',
+                                              (int(listing_match[1]), user['id'])).fetchone()
+                        if not existing:
+                            return self.reply(404, {'error': 'Publicación no encontrada o no te pertenece.'})
+                        data = {**dict(existing), **data}
                     title = clean(data, 'title', 3, 100)
                     description = clean(data, 'description', 10, 2000)
                     city = clean(data, 'city', 2, 80)
@@ -208,11 +296,21 @@ class Handler(BaseHTTPRequestHandler):
                         parsed = urlsplit(image)
                         if parsed.scheme != 'https' or not parsed.hostname or parsed.username or parsed.password:
                             raise ValueError('La imagen debe tener una URL HTTPS válida.')
-                    cursor = db.execute('INSERT INTO listings(user_id,title,description,price,category,city,image,created_at) '
-                                        'VALUES(?,?,?,?,?,?,?,?)',
-                                        (user['id'], title, description, price, category, city, image, int(time.time())))
+                    condition = data.get('condition', 'Usado')
+                    status = data.get('status', 'active')
+                    if condition not in ('Nuevo', 'Como nuevo', 'Usado') or status not in ('active', 'sold'):
+                        raise ValueError('Estado del producto no válido.')
+                    fields = (title, description, price, category, city, image, condition, status)
+                    if existing:
+                        db.execute('UPDATE listings SET title=?,description=?,price=?,category=?,city=?,image=?,condition=?,status=? '
+                                   'WHERE id=? AND user_id=?', (*fields, existing['id'], user['id']))
+                        listing_id = existing['id']
+                    else:
+                        cursor = db.execute('INSERT INTO listings(title,description,price,category,city,image,condition,status,user_id,created_at) '
+                                            'VALUES(?,?,?,?,?,?,?,?,?,?)', (*fields, user['id'], int(time.time())))
+                        listing_id = cursor.lastrowid
                     db.commit()
-                    return self.reply(201, {'id': cursor.lastrowid})
+                    return self.reply(200 if existing else 201, {'id': listing_id})
                 if self.command == 'DELETE' and re.fullmatch(r'/api/listings/\d+', path):
                     cursor = db.execute('DELETE FROM listings WHERE id=? AND user_id=?',
                                         (int(path.rsplit('/', 1)[1]), user['id']))
@@ -233,5 +331,6 @@ if __name__ == '__main__':
     initialize()
     host = os.environ.get('HOST', '127.0.0.1')
     port = int(os.environ.get('PORT', '8000'))
+    server = ThreadingHTTPServer((host, port), Handler)
     print(f'Marketplace Lautaro iniciado en {host}:{port}', flush=True)
-    ThreadingHTTPServer((host, port), Handler).serve_forever()
+    server.serve_forever()
