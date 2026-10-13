@@ -1,0 +1,1 @@
+"""Marketplace Lautaro application package."""

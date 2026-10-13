@@ -2,82 +2,107 @@
 
 Marketplace local en español donde las personas crean una cuenta, publican productos y contactan a vendedores por correo. Precios en pesos chilenos (CLP).
 
-## Ejecutar
+El backend está construido para escalar: **FastAPI** (ASGI, async), **PostgreSQL** con **SQLAlchemy 2.0** asíncrono y migraciones **Alembic**, caché y rate limiting con **Redis**, y subida de imágenes a **almacenamiento de objetos S3**. El frontend se mantiene como HTML/CSS/JS sin build.
 
-Requiere **Python 3.12 o posterior**. No necesita dependencias externas ni servicios de base de datos.
+## Arquitectura
 
-```bash
-git clone https://github.com/ricaardoo/Marketplace_Lautaro.git
-cd Marketplace_Lautaro
-python3 server.py
+```
+app/
+  main.py            # fábrica de la app FastAPI, middleware y estáticos
+  config.py          # configuración por variables de entorno (pydantic-settings)
+  database.py        # engine async, sesión y Base
+  models.py          # tablas: users, sessions, listings, favorites
+  schemas.py         # validación de entrada/salida (Pydantic v2)
+  security.py        # hashing de contraseñas (Argon2) y tokens de sesión
+  cache.py           # caché Redis con respaldo en memoria
+  ratelimit.py       # límite de intentos de autenticación
+  storage.py         # subida a S3 con respaldo en disco
+  dependencies.py    # sesión, usuario actual y cookies
+  routers/           # auth, listings, favorites, stats, uploads
+alembic/             # migraciones de base de datos
+public/              # frontend estático
+tests/               # suite pytest
 ```
 
-Abre `http://localhost:8000` en tu navegador. En Windows puedes ejecutar `py server.py`. Si ya clonaste el proyecto, actualiza con `git pull origin main` y reinicia el servidor.
+## Ejecutar con Docker (recomendado)
 
-El servidor usa el puerto 8000 y escucha en `127.0.0.1` por defecto. Los datos se crean automáticamente en `.data/marketplace.sqlite3`, excluido de Git. La primera ejecución muestra un catálogo vacío; crea una cuenta y publica tu primer producto desde la interfaz. No hay cuentas, productos ni contraseñas de demostración.
-
-Para recibir conexiones externas en un entorno de desarrollo con acceso configurado:
+Levanta PostgreSQL, Redis, MinIO (S3) y la app:
 
 ```bash
-HOST=0.0.0.0 PORT=8000 python3 server.py
+cp .env.example .env          # ajusta SECRET_KEY
+docker compose up --build
 ```
+
+Abre `http://localhost:8000`. La app aplica las migraciones (`alembic upgrade head`) al iniciar.
+
+## Ejecutar en local
+
+Requiere **Python 3.12+**. Para desarrollo rápido puedes usar SQLite y la caché en memoria:
+
+```bash
+python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+
+# SQLite + caché en memoria para desarrollo
+export DATABASE_URL="sqlite+aiosqlite:///./.data/marketplace.db"   # Windows: set DATABASE_URL=...
+export REDIS_URL=""
+
+uvicorn app.main:app --reload --port 8000
+```
+
+Con `AUTO_CREATE_TABLES=1` (por defecto) las tablas se crean automáticamente al iniciar. Con PostgreSQL en producción usa migraciones (`alembic upgrade head`) y desactiva `AUTO_CREATE_TABLES`.
+
+Documentación interactiva de la API: `http://localhost:8000/api/docs` (con `DEBUG=1`).
 
 ## Funciones
 
-- Registro, inicio y cierre de sesión con cookies HttpOnly y contraseñas protegidas con scrypt.
+- Registro, inicio y cierre de sesión con cookies HttpOnly y contraseñas protegidas con Argon2.
 - Catálogo público paginado con búsqueda, filtros por categoría, ciudad exacta, condición y rango de precios; orden por fecha o precio.
-- Enlace directo y para compartir cada producto (`/?producto=ID`) con botón de compartir en el detalle.
-- Favoritos guardados en la cuenta y persistentes entre sesiones.
-- Estadísticas reales de productos disponibles, vendedores y ciudades.
-- Publicación y edición con precio, descripción, ciudad, condición y URL HTTPS de foto opcional con vista previa.
-- Panel de publicaciones propias: editar, marcar como vendido, republicar y eliminar con confirmación.
+- Conteo total de resultados y endpoint de detalle por producto.
+- Favoritos persistentes por cuenta.
+- Estadísticas reales de productos, vendedores y ciudades (cacheadas con Redis).
+- Publicación y edición con precio, descripción, ciudad, condición y foto por **subida de archivo** o URL HTTPS.
+- Panel de publicaciones propias: editar, marcar como vendido, republicar y eliminar.
 - Perfil con edición del nombre público.
-- Límite de 20 solicitudes a registro/login por IP en cinco minutos.
-- Detalle del producto y contacto por correo: el vendedor acepta que su correo sea público al publicar.
-- Persistencia SQLite de usuarios, anuncios y sesiones; diseño adaptable a móvil.
-
-## Validar
-
-```bash
-python3 -m unittest discover -s tests -v
-node --check public/app.js
-```
-
-Las pruebas usan una base temporal y un servidor independiente. Cubren registro, login, logout, búsqueda, filtros, edición, autorización, favoritos, productos vendidos, perfil, eliminación, límites de acceso y persistencia después de reiniciar. También comprueban una migración repetible desde la base anterior sin perder cuentas ni anuncios. Node solo es necesario para la comprobación opcional de sintaxis JavaScript.
-
-### Prueba opcional de interfaz
-
-Con Playwright y Chromium disponibles:
-
-```bash
-python3 tests/browser_smoke.py
-```
-
-Puedes indicar el ejecutable de Chromium mediante `CHROMIUM_PATH`; en Linux utiliza `/usr/bin/chromium` si existe. Esta prueba usa una base temporal y recorre registro, publicación, edición, favoritos, venta y republicación, filtros, perfil, eliminación y cierre de sesión. Comprueba que escritorio y móvil no tengan desbordamiento horizontal ni errores JavaScript. Playwright es una herramienta de prueba opcional, no una dependencia de la aplicación.
-
-## Actualización y datos
-
-Al iniciar, las bases existentes se actualizan automáticamente para agregar condición, estado y favoritos. Los productos anteriores conservan sus datos y aparecen como usados y disponibles. La migración es repetible. El catálogo se carga en páginas de 24 resultados con el botón «Ver más productos» y muestra el total disponible.
-
-Antes de actualizar, respalda SQLite usando su API de backup (incluye cambios pendientes en WAL):
-
-```bash
-python3 -c "import sqlite3; source=sqlite3.connect('.data/marketplace.sqlite3'); target=sqlite3.connect('marketplace-backup.sqlite3'); source.backup(target); target.close(); source.close()"
-```
-
-El archivo de respaldo contiene información privada; guárdalo fuera del repositorio y no lo subas a GitHub.
+- Límite de intentos de registro/login por IP (Redis, distribuido).
+- Persistencia PostgreSQL; diseño adaptable a móvil.
 
 ## Configuración
 
 | Variable | Valor predeterminado | Uso |
 | --- | --- | --- |
-| `HOST` | `127.0.0.1` | Interfaz de escucha |
-| `PORT` | `8000` | Puerto HTTP |
-| `MARKETPLACE_DB` | `.data/marketplace.sqlite3` | Ruta de base de datos |
-| `COOKIE_SECURE` | desactivado | `1` para cookies exclusivas de HTTPS |
+| `DATABASE_URL` | `postgresql+asyncpg://marketplace:marketplace@localhost:5432/marketplace` | Conexión a la base de datos |
+| `AUTO_CREATE_TABLES` | `1` | Crea tablas al iniciar (desactivar en producción con migraciones) |
+| `REDIS_URL` | vacío | Redis para caché y rate limit (vacío = memoria) |
+| `CACHE_TTL_SECONDS` | `30` | TTL de la caché de catálogo |
+| `SECRET_KEY` | `dev-secret-key-change-in-production` | Clave de la aplicación |
+| `COOKIE_SECURE` | `0` | `1` para cookies exclusivas de HTTPS |
+| `SESSION_TTL_DAYS` | `7` | Duración de la sesión |
+| `AUTH_RATE_LIMIT` | `20` | Intentos de auth por ventana |
+| `AUTH_RATE_WINDOW_SECONDS` | `300` | Ventana del rate limit |
+| `MAX_UPLOAD_BYTES` | `5242880` | Tamaño máximo de imagen (5 MB) |
+| `S3_BUCKET` | vacío | Bucket S3/MinIO (vacío = disco local) |
+| `S3_ENDPOINT_URL` | vacío | Endpoint S3-compatible (MinIO/Cloudflare R2) |
+| `MEDIA_DIR` | `.data/media` | Carpeta de subidas cuando no hay S3 |
+| `CSP_IMG_EXTRA` | vacío | Host extra permitido en `img-src` (p. ej. MinIO local) |
 
-## Alcance y siguientes pasos
+## Validar
 
-Esta es una base funcional para desarrollo, con compraventa coordinada directamente entre personas. No incluye pagos, chat, carga de archivos, verificación de correo, recuperación de contraseña ni moderación. Las fotos se cargan desde URLs públicas proporcionadas por vendedores.
+```bash
+pip install -r requirements-dev.txt
+pytest -q
+node --check public/app.js
+```
 
-Antes de abrirlo al público, incorpora protección contra abuso persistente y distribuida, moderación, verificación y recuperación de cuentas, y una política de privacidad. El límite de autenticación actual vive en memoria y se reinicia junto con el servidor; detrás de un proxy agrupa solicitudes según la IP de conexión y requiere una política apropiada en ese proxy. Usa un servidor y proxy apropiados para producción con HTTPS y `COOKIE_SECURE=1`; el servidor estándar de Python está destinado a desarrollo. Respalda la base de datos y define políticas de retención del correo público.
+La suite corre contra SQLite y caché en memoria en local, y contra **PostgreSQL + Redis** en CI (`services` en `.github/workflows/checks.yml`).
+
+## Migraciones
+
+```bash
+alembic revision --autogenerate -m "descripción"
+alembic upgrade head
+```
+
+## Alcance
+
+No incluye pagos ni envío. El contacto es por correo del vendedor. Antes de abrirlo al público, configura HTTPS, `COOKIE_SECURE=1`, un `SECRET_KEY` fuerte, respaldos de la base y una política de privacidad.

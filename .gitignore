@@ -1,5 +1,21 @@
 .data/
 __pycache__/
 *.pyc
+*.pyo
 
+# Environment
+.env
+.venv/
+venv/
+env/
+
+# Local databases
+*.sqlite3
+*.db
 *backup*.sqlite3
+
+# Tooling caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+node_modules/

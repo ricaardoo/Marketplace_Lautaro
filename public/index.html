@@ -25,9 +25,6 @@
   </head>
   <body>
     <a class="skip-link" href="#catalog">Ir a los productos</a>
-    <div class="announcement">
-      Compra local. Dale una nueva vida a lo que ya no usas.
-    </div>
     <header class="topbar">
       <a class="brand" href="/" aria-label="Lautaro, inicio"
         ><span class="brand-icon">L.</span>lautaro<span class="brand-dot"
@@ -74,18 +71,6 @@
             Descubre productos con una nueva historia.<br />Compra y vende entre
             personas de tu comunidad.
           </p>
-          <ul class="hero-points">
-            <li>
-              <span class="point-icon" aria-hidden="true">✓</span> Publica gratis
-            </li>
-            <li>
-              <span class="point-icon" aria-hidden="true">✓</span> Contacto
-              directo
-            </li>
-            <li>
-              <span class="point-icon" aria-hidden="true">✓</span> Sin comisiones
-            </li>
-          </ul>
           <div class="hero-actions">
             <button class="button dark" id="hero-browse">
               Explorar productos
@@ -310,79 +295,14 @@
           </button>
         </div>
       </section>
-      <section class="how-it-works reveal">
-        <div>
-          <span class="eyebrow">ASÍ DE SIMPLE</span>
-          <h2>De tu casa a una nueva historia.</h2>
-        </div>
-        <article>
-          <span>01</span>
-          <h3>Encuentra lo que buscas</h3>
-          <p>Explora, filtra y guarda tus productos favoritos.</p>
-        </article>
-        <article>
-          <span>02</span>
-          <h3>Conecta con quien vende</h3>
-          <p>Consulta los detalles y acuerda la entrega directamente.</p>
-        </article>
-        <article>
-          <span>03</span>
-          <h3>Haz espacio, empieza a vender</h3>
-          <p>Publica tu producto y gestiona tus anuncios en un solo lugar.</p>
-        </article>
-      </section>
-      <section class="seller-banner reveal">
-        <div>
-          <span class="eyebrow">HAZ ESPACIO PARA LO QUE VIENE</span>
-          <h2>Alguien está buscando<br />eso que ya no usas.</h2>
-        </div>
-        <button id="banner-publish" class="button light">
-          Empieza a vender
-          <span
-            ><svg
-              viewBox="0 0 24 24"
-              aria-hidden="true"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.6"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <path d="M5 19 19 5M5 5h14v14" /></svg
-          ></span>
-        </button>
-      </section>
     </main>
     <footer>
-      <div class="footer-main">
-        <div class="footer-brand">
-          <a class="brand" href="/">lautaro<span class="brand-dot">●</span></a>
-          <p>
-            El marketplace de tu comunidad. Compra, vende y dale una segunda
-            historia a lo que ya no usas.
-          </p>
-        </div>
-        <nav class="footer-col" aria-label="Explorar">
-          <h4>Explorar</h4>
-          <button data-footer-view="browse">Catálogo</button>
-          <button data-footer-view="favorites">Favoritos</button>
-          <button data-footer-view="mine">Mis publicaciones</button>
-          <button data-footer-action="publish">Publicar producto</button>
-        </nav>
-        <nav class="footer-col" aria-label="Categorías">
-          <h4>Categorías</h4>
-          <button data-footer-category="Tecnología">Tecnología</button>
-          <button data-footer-category="Hogar">Hogar</button>
-          <button data-footer-category="Moda">Moda</button>
-          <button data-footer-category="Deportes">Deportes</button>
-          <button data-footer-category="Vehículos">Vehículos</button>
-        </nav>
-        <div class="footer-col">
-          <h4>Tu cuenta</h4>
-          <button data-footer-action="auth">Ingresar o registrarme</button>
-          <button data-footer-action="profile">Mi cuenta</button>
-          <span class="footer-note">Precios en pesos chilenos (CLP).</span>
-        </div>
+      <div class="footer-brand">
+        <a class="brand" href="/">lautaro<span class="brand-dot">●</span></a>
+        <p>
+          El marketplace de tu comunidad. Compra, vende y dale una segunda
+          historia a lo que ya no usas.
+        </p>
       </div>
       <div class="footer-bottom">
         <span>© 2026 Lautaro. Hecho para tu comunidad.</span>
@@ -392,19 +312,6 @@
         >
       </div>
     </footer>
-    <button id="to-top" class="to-top" type="button" aria-label="Volver arriba">
-      <svg
-        viewBox="0 0 24 24"
-        aria-hidden="true"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="1.8"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-      >
-        <path d="M12 19V5M5 12l7-7 7 7" />
-      </svg>
-    </button>
     <dialog id="auth-dialog">
       <form id="auth-form">
         <div class="dialog-heading">
@@ -506,10 +413,19 @@
           ></textarea
           ><small id="description-count" class="char-count">0/2000</small></label
         ><label
-          >URL de la foto <span class="muted">(opcional)</span
+          >Subir foto <span class="muted">(opcional)</span
+          ><input
+            id="image-file"
+            name="file"
+            type="file"
+            accept="image/png,image/jpeg,image/webp,image/gif,image/avif"
+          /><small>Máximo 5 MB. Se guarda en nuestro almacenamiento.</small></label
+        ><label
+          >o URL de la foto <span class="muted">(opcional)</span
           ><input
             name="image"
-            type="url"
+            type="text"
+            inputmode="url"
             placeholder="https://…"
             maxlength="1000"
           /><small>Usa una imagen pública con HTTPS.</small></label

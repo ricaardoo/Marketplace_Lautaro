@@ -144,25 +144,11 @@ function imageFallback(container) {
     ),
   );
 }
-function animateStat(element, target) {
-  const duration = 700;
-  const start = performance.now();
-  const step = (now) => {
-    const progress = Math.min(1, (now - start) / duration);
-    const eased = 1 - Math.pow(1 - progress, 3);
-    element.textContent = Math.round(target * eased).toLocaleString("es-CL");
-    if (progress < 1) requestAnimationFrame(step);
-  };
-  requestAnimationFrame(step);
-}
 async function loadStats() {
   try {
     const stats = await api("/api/stats");
-    for (const key of ["listings", "sellers", "cities"]) {
-      const element = $(`#stat-${key}`);
-      if (prefersReducedMotion) element.textContent = stats[key];
-      else animateStat(element, stats[key]);
-    }
+    for (const key of ["listings", "sellers", "cities"])
+      $(`#stat-${key}`).textContent = stats[key];
   } catch {
     for (const key of ["listings", "sellers", "cities"])
       $(`#stat-${key}`).textContent = "—";
@@ -507,8 +493,7 @@ $("#publish-category").innerHTML = categories
   .map((c) => `<option>${c}</option>`)
   .join("");
 $(".search-box>span").innerHTML = icon("search");
-for (const id of ["publish", "banner-publish"])
-  $(`#${id}`).addEventListener("click", () => openPublish());
+$("#publish").addEventListener("click", () => openPublish());
 $("#empty-publish").addEventListener("click", () =>
   view === "favorites" ? setView("browse") : openPublish(),
 );
@@ -553,6 +538,7 @@ submitForm($("#auth-form"), async (data) => {
   if (action) action();
 });
 submitForm($("#publish-form"), async (data) => {
+  delete data.file;
   data.price = Number(data.price);
   await api(
     editing ? `/api/listings/${editing}` : "/api/listings",
@@ -641,23 +627,51 @@ $("#confirm-delete").addEventListener("click", async () => {
     button.disabled = false;
   }
 });
-$("#publish-form [name=image]").addEventListener("change", (e) => {
-  const url = e.target.value.trim();
-  $("#image-preview").replaceChildren();
-  $("#image-preview").hidden = true;
+function showImagePreview(url) {
+  const preview = $("#image-preview");
+  preview.replaceChildren();
+  preview.hidden = true;
   if (!url) return;
-  try {
-    if (new URL(url).protocol !== "https:") throw new Error();
-  } catch {
-    return;
+  if (!url.startsWith("/")) {
+    try {
+      if (new URL(url).protocol !== "https:") return;
+    } catch {
+      return;
+    }
   }
   const img = document.createElement("img");
   img.src = url;
   img.alt = "Vista previa de tu producto";
   img.referrerPolicy = "no-referrer";
-  $("#image-preview").append(img);
-  $("#image-preview").hidden = false;
-  imageFallback($("#image-preview"));
+  preview.append(img);
+  preview.hidden = false;
+  imageFallback(preview);
+}
+$("#publish-form [name=image]").addEventListener("change", (e) =>
+  showImagePreview(e.target.value.trim()),
+);
+$("#image-file").addEventListener("change", async (e) => {
+  const file = e.target.files && e.target.files[0];
+  if (!file) return;
+  const errorBox = $("#publish-form .form-error");
+  errorBox.textContent = "";
+  const input = e.target;
+  input.disabled = true;
+  try {
+    const body = new FormData();
+    body.append("file", file);
+    const response = await fetch("/api/uploads", { method: "POST", body });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok)
+      throw new Error(result.error || "No se pudo subir la imagen.");
+    $("#publish-form [name=image]").value = result.url;
+    showImagePreview(result.url);
+    toast("Imagen subida.");
+  } catch (error) {
+    errorBox.textContent = error.message;
+  } finally {
+    input.disabled = false;
+  }
 });
 $("#publish-form [name=description]").addEventListener(
   "input",
@@ -726,73 +740,12 @@ $("#active-filters").addEventListener("click", (event) => {
 });
 $("#hero-browse").addEventListener("click", () => setView("browse"));
 $("#hero-publish").addEventListener("click", () => openPublish());
-document
-  .querySelectorAll("[data-footer-view]")
-  .forEach((button) =>
-    button.addEventListener("click", () =>
-      setView(button.dataset.footerView),
-    ),
-  );
-document
-  .querySelectorAll("[data-footer-category]")
-  .forEach((button) =>
-    button.addEventListener("click", () => {
-      view = "browse";
-      resetFilters(false);
-      category = button.dataset.footerCategory;
-      loadProducts();
-      $("#catalog").scrollIntoView({
-        behavior: prefersReducedMotion ? "auto" : "smooth",
-        block: "start",
-      });
-    }),
-  );
-document
-  .querySelectorAll("[data-footer-action]")
-  .forEach((button) =>
-    button.addEventListener("click", () => {
-      const action = button.dataset.footerAction;
-      if (action === "publish") openPublish();
-      else if (action === "profile" && user) $("#profile").click();
-      else {
-        afterLogin = null;
-        $("#auth-form .form-error").textContent = "";
-        $("#auth-dialog").showModal();
-      }
-    }),
-  );
 const topbar = $(".topbar");
-const toTop = $("#to-top");
 function onScroll() {
   topbar.classList.toggle("scrolled", window.scrollY > 8);
-  toTop.hidden = window.scrollY < 420;
 }
 window.addEventListener("scroll", onScroll, { passive: true });
 onScroll();
-toTop.addEventListener("click", () =>
-  window.scrollTo({
-    top: 0,
-    behavior: prefersReducedMotion ? "auto" : "smooth",
-  }),
-);
-const revealObserver =
-  "IntersectionObserver" in window
-    ? new IntersectionObserver(
-        (entries) => {
-          for (const entry of entries) {
-            if (entry.isIntersecting) {
-              entry.target.classList.add("visible");
-              revealObserver.unobserve(entry.target);
-            }
-          }
-        },
-        { threshold: 0.15 },
-      )
-    : null;
-document.querySelectorAll(".reveal").forEach((element) => {
-  if (revealObserver) revealObserver.observe(element);
-  else element.classList.add("visible");
-});
 (async () => {
   try {
     user = await api("/api/me");
