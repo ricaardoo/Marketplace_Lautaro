@@ -271,6 +271,12 @@
             Limpiar filtros
           </button>
         </div>
+        <div
+          id="active-filters"
+          class="active-filters"
+          aria-label="Filtros activos"
+          hidden
+        ></div>
         <div id="loading" class="loading" role="status" hidden>
           Buscando tu próximo favorito…
         </div>
@@ -304,7 +310,7 @@
           </button>
         </div>
       </section>
-      <section class="how-it-works">
+      <section class="how-it-works reveal">
         <div>
           <span class="eyebrow">ASÍ DE SIMPLE</span>
           <h2>De tu casa a una nueva historia.</h2>
@@ -325,7 +331,7 @@
           <p>Publica tu producto y gestiona tus anuncios en un solo lugar.</p>
         </article>
       </section>
-      <section class="seller-banner">
+      <section class="seller-banner reveal">
         <div>
           <span class="eyebrow">HAZ ESPACIO PARA LO QUE VIENE</span>
           <h2>Alguien está buscando<br />eso que ya no usas.</h2>
@@ -348,10 +354,57 @@
       </section>
     </main>
     <footer>
-      <a class="brand" href="/">lautaro<span class="brand-dot">●</span></a>
-      <p>Un lugar para conectar, comprar y vender.</p>
-      <span>Hecho para tu comunidad.</span>
+      <div class="footer-main">
+        <div class="footer-brand">
+          <a class="brand" href="/">lautaro<span class="brand-dot">●</span></a>
+          <p>
+            El marketplace de tu comunidad. Compra, vende y dale una segunda
+            historia a lo que ya no usas.
+          </p>
+        </div>
+        <nav class="footer-col" aria-label="Explorar">
+          <h4>Explorar</h4>
+          <button data-footer-view="browse">Catálogo</button>
+          <button data-footer-view="favorites">Favoritos</button>
+          <button data-footer-view="mine">Mis publicaciones</button>
+          <button data-footer-action="publish">Publicar producto</button>
+        </nav>
+        <nav class="footer-col" aria-label="Categorías">
+          <h4>Categorías</h4>
+          <button data-footer-category="Tecnología">Tecnología</button>
+          <button data-footer-category="Hogar">Hogar</button>
+          <button data-footer-category="Moda">Moda</button>
+          <button data-footer-category="Deportes">Deportes</button>
+          <button data-footer-category="Vehículos">Vehículos</button>
+        </nav>
+        <div class="footer-col">
+          <h4>Tu cuenta</h4>
+          <button data-footer-action="auth">Ingresar o registrarme</button>
+          <button data-footer-action="profile">Mi cuenta</button>
+          <span class="footer-note">Precios en pesos chilenos (CLP).</span>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <span>© 2026 Lautaro. Hecho para tu comunidad.</span>
+        <span
+          >Lautaro conecta personas; no procesa pagos ni intermedia la
+          entrega.</span
+        >
+      </div>
     </footer>
+    <button id="to-top" class="to-top" type="button" aria-label="Volver arriba">
+      <svg
+        viewBox="0 0 24 24"
+        aria-hidden="true"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.8"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      >
+        <path d="M12 19V5M5 12l7-7 7 7" />
+      </svg>
+    </button>
     <dialog id="auth-dialog">
       <form id="auth-form">
         <div class="dialog-heading">

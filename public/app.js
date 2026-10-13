@@ -46,6 +46,25 @@ const escape = (text) =>
         c
       ],
   );
+const prefersReducedMotion =
+  window.matchMedia?.("(prefers-reduced-motion: reduce)").matches || false;
+function timeAgo(seconds) {
+  const diff = Math.max(0, Date.now() / 1000 - seconds);
+  for (const [name, size] of [
+    ["año", 31536000],
+    ["mes", 2592000],
+    ["día", 86400],
+    ["hora", 3600],
+    ["minuto", 60],
+  ]) {
+    const value = Math.floor(diff / size);
+    if (value >= 1) {
+      const plural = value === 1 ? "" : name === "mes" ? "es" : "s";
+      return `hace ${value} ${name}${plural}`;
+    }
+  }
+  return "recién publicado";
+}
 let user = null,
   category = "",
   view = "browse",
@@ -102,7 +121,7 @@ function renderCategories() {
   $("#categories").innerHTML = ["", ...categories]
     .map(
       (c) =>
-        `<button class="category ${category === c ? "selected" : ""}" data-category="${escape(c)}" aria-pressed="${category === c}">${c ? icon(c) : icon("box")}${c || "Todos los productos"}</button>`,
+        `<button class="category ${category === c ? "selected" : ""}" data-category="${escape(c)}" aria-pressed="${category === c}"><span class="category-icon" aria-hidden="true">${c ? icon(c) : icon("box")}</span><span>${c || "Todos los productos"}</span></button>`,
     )
     .join("");
 }
@@ -125,11 +144,25 @@ function imageFallback(container) {
     ),
   );
 }
+function animateStat(element, target) {
+  const duration = 700;
+  const start = performance.now();
+  const step = (now) => {
+    const progress = Math.min(1, (now - start) / duration);
+    const eased = 1 - Math.pow(1 - progress, 3);
+    element.textContent = Math.round(target * eased).toLocaleString("es-CL");
+    if (progress < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
 async function loadStats() {
   try {
     const stats = await api("/api/stats");
-    for (const key of ["listings", "sellers", "cities"])
-      $(`#stat-${key}`).textContent = stats[key];
+    for (const key of ["listings", "sellers", "cities"]) {
+      const element = $(`#stat-${key}`);
+      if (prefersReducedMotion) element.textContent = stats[key];
+      else animateStat(element, stats[key]);
+    }
   } catch {
     for (const key of ["listings", "sellers", "cities"])
       $(`#stat-${key}`).textContent = "—";
@@ -157,10 +190,44 @@ function renderProducts() {
   $("#products").innerHTML = products
     .map(
       (p) =>
-        `<article class="product-card ${p.status === "sold" ? "sold" : ""}"><button class="card-main" data-id="${p.id}" aria-label="Ver ${escape(p.title)}"><div class="product-image">${imageMarkup(p)}<span class="product-category">${p.status === "sold" ? "Vendido" : escape(p.condition)}</span><span class="card-arrow">${icon("arrow")}</span></div><div class="product-info"><span class="location">${icon("pin")}${escape(p.city)} <span>· ${escape(p.category)}</span></span><h3>${escape(p.title)}</h3><div class="product-bottom"><strong>${money.format(p.price)}</strong><span>${escape(p.seller)}</span></div></div></button><button class="favorite-button ${p.favorite ? "saved" : ""}" data-favorite="${p.id}" aria-label="${p.favorite ? "Quitar de" : "Guardar en"} favoritos: ${escape(p.title)}" aria-pressed="${!!p.favorite}">${icon("heart")}</button>${view === "mine" ? `<div class="card-management"><button data-edit="${p.id}">Editar</button><button data-status="${p.id}">${p.status === "sold" ? "Republicar" : "Marcar vendido"}</button></div>` : ""}</article>`,
+        `<article class="product-card ${p.status === "sold" ? "sold" : ""}"><button class="card-main" data-id="${p.id}" aria-label="Ver ${escape(p.title)}"><div class="product-image">${imageMarkup(p)}<span class="product-category">${p.status === "sold" ? "Vendido" : escape(p.condition)}</span><span class="card-arrow">${icon("arrow")}</span></div><div class="product-info"><span class="location">${icon("pin")}${escape(p.city)} <span>· ${escape(p.category)}</span></span><h3>${escape(p.title)}</h3><div class="product-bottom"><strong>${money.format(p.price)}</strong><span class="fav-count" title="Personas que lo guardaron">${icon("heart")}${p.favorite_count || 0}</span></div><div class="product-seller"><span class="mini-avatar">${escape(p.seller.slice(0, 1).toUpperCase())}</span><span>${escape(p.seller)}</span><span>·</span><span>${timeAgo(p.created_at)}</span></div></div></button><button class="favorite-button ${p.favorite ? "saved" : ""}" data-favorite="${p.id}" aria-label="${p.favorite ? "Quitar de" : "Guardar en"} favoritos: ${escape(p.title)}" aria-pressed="${!!p.favorite}">${icon("heart")}</button>${view === "mine" ? `<div class="card-management"><button data-edit="${p.id}">Editar</button><button data-status="${p.id}">${p.status === "sold" ? "Republicar" : "Marcar vendido"}</button></div>` : ""}</article>`,
     )
     .join("");
   imageFallback($("#products"));
+}
+function renderActiveFilters() {
+  const entries = [];
+  if (category) entries.push(["category", `Categoría: ${category}`]);
+  const search = $("#search").value.trim();
+  if (search) entries.push(["search", `Búsqueda: “${search}”`]);
+  const city = $("#filter-city").value.trim();
+  if (city) entries.push(["city", `Ciudad: ${city}`]);
+  if ($("#min-price").value.trim())
+    entries.push([
+      "min",
+      `Desde: ${money.format(Number($("#min-price").value))}`,
+    ]);
+  if ($("#max-price").value.trim())
+    entries.push([
+      "max",
+      `Hasta: ${money.format(Number($("#max-price").value))}`,
+    ]);
+  if ($("#filter-condition").value)
+    entries.push(["condition", `Condición: ${$("#filter-condition").value}`]);
+  if ($("#sort").value !== "recent") entries.push(["sort", "Orden personalizado"]);
+  const wrap = $("#active-filters");
+  if (!entries.length) {
+    wrap.hidden = true;
+    wrap.innerHTML = "";
+    return;
+  }
+  wrap.hidden = false;
+  wrap.innerHTML = entries
+    .map(
+      ([key, label]) =>
+        `<span class="filter-chip"><em>${escape(label)}</em><button type="button" data-remove-filter="${key}" aria-label="Quitar filtro ${escape(label)}">×</button></span>`,
+    )
+    .join("");
 }
 function renderSkeletons() {
   $("#products").innerHTML = Array.from(
@@ -209,6 +276,7 @@ async function loadProducts({ append = false } = {}) {
     else el.removeAttribute("aria-current");
   }
   renderCategories();
+  renderActiveFilters();
   const params = filterParams();
   params.set("limit", PAGE_SIZE);
   params.set("offset", append ? products.length : 0);
@@ -632,6 +700,88 @@ document.addEventListener("keydown", (event) => {
 });
 window.addEventListener("resize", () => {
   if (window.innerWidth > 800) closeMenu();
+});
+$("#active-filters").addEventListener("click", (event) => {
+  const button = event.target.closest("[data-remove-filter]");
+  if (!button) return;
+  const key = button.dataset.removeFilter;
+  if (key === "category") category = "";
+  else if (key === "search") $("#search").value = "";
+  else if (key === "city") $("#filter-city").value = "";
+  else if (key === "min") $("#min-price").value = "";
+  else if (key === "max") $("#max-price").value = "";
+  else if (key === "condition") $("#filter-condition").value = "";
+  else if (key === "sort") $("#sort").value = "recent";
+  loadProducts();
+});
+$("#hero-browse").addEventListener("click", () => setView("browse"));
+$("#hero-publish").addEventListener("click", () => openPublish());
+document
+  .querySelectorAll("[data-footer-view]")
+  .forEach((button) =>
+    button.addEventListener("click", () =>
+      setView(button.dataset.footerView),
+    ),
+  );
+document
+  .querySelectorAll("[data-footer-category]")
+  .forEach((button) =>
+    button.addEventListener("click", () => {
+      view = "browse";
+      resetFilters(false);
+      category = button.dataset.footerCategory;
+      loadProducts();
+      $("#catalog").scrollIntoView({
+        behavior: prefersReducedMotion ? "auto" : "smooth",
+        block: "start",
+      });
+    }),
+  );
+document
+  .querySelectorAll("[data-footer-action]")
+  .forEach((button) =>
+    button.addEventListener("click", () => {
+      const action = button.dataset.footerAction;
+      if (action === "publish") openPublish();
+      else if (action === "profile" && user) $("#profile").click();
+      else {
+        afterLogin = null;
+        $("#auth-form .form-error").textContent = "";
+        $("#auth-dialog").showModal();
+      }
+    }),
+  );
+const topbar = $(".topbar");
+const toTop = $("#to-top");
+function onScroll() {
+  topbar.classList.toggle("scrolled", window.scrollY > 8);
+  toTop.hidden = window.scrollY < 420;
+}
+window.addEventListener("scroll", onScroll, { passive: true });
+onScroll();
+toTop.addEventListener("click", () =>
+  window.scrollTo({
+    top: 0,
+    behavior: prefersReducedMotion ? "auto" : "smooth",
+  }),
+);
+const revealObserver =
+  "IntersectionObserver" in window
+    ? new IntersectionObserver(
+        (entries) => {
+          for (const entry of entries) {
+            if (entry.isIntersecting) {
+              entry.target.classList.add("visible");
+              revealObserver.unobserve(entry.target);
+            }
+          }
+        },
+        { threshold: 0.15 },
+      )
+    : null;
+document.querySelectorAll(".reveal").forEach((element) => {
+  if (revealObserver) revealObserver.observe(element);
+  else element.classList.add("visible");
 });
 (async () => {
   try {
