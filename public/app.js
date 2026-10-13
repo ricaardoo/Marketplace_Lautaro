@@ -190,7 +190,7 @@ function renderProducts() {
   $("#products").innerHTML = products
     .map(
       (p) =>
-        `<article class="product-card ${p.status === "sold" ? "sold" : ""}"><button class="card-main" data-id="${p.id}" aria-label="Ver ${escape(p.title)}"><div class="product-image">${imageMarkup(p)}<span class="product-category">${p.status === "sold" ? "Vendido" : escape(p.condition)}</span><span class="card-arrow">${icon("arrow")}</span></div><div class="product-info"><span class="location">${icon("pin")}${escape(p.city)} <span>· ${escape(p.category)}</span></span><h3>${escape(p.title)}</h3><div class="product-bottom"><strong>${money.format(p.price)}</strong><span class="fav-count" title="Personas que lo guardaron">${icon("heart")}${p.favorite_count || 0}</span></div><div class="product-seller"><span class="mini-avatar">${escape(p.seller.slice(0, 1).toUpperCase())}</span><span>${escape(p.seller)}</span><span>·</span><span>${timeAgo(p.created_at)}</span></div></div></button><button class="favorite-button ${p.favorite ? "saved" : ""}" data-favorite="${p.id}" aria-label="${p.favorite ? "Quitar de" : "Guardar en"} favoritos: ${escape(p.title)}" aria-pressed="${!!p.favorite}">${icon("heart")}</button>${view === "mine" ? `<div class="card-management"><button data-edit="${p.id}">Editar</button><button data-status="${p.id}">${p.status === "sold" ? "Republicar" : "Marcar vendido"}</button></div>` : ""}</article>`,
+        `<article class="product-card ${p.status === "sold" ? "sold" : ""}"><button class="card-main" data-id="${p.id}" aria-label="Ver ${escape(p.title)}"><div class="product-image">${imageMarkup(p)}<span class="product-category">${p.status === "sold" ? "Vendido" : escape(p.condition)}</span><span class="card-arrow">${icon("arrow")}</span></div><div class="product-info"><span class="location">${icon("pin")}${escape(p.city)} <span>· ${escape(p.category)}</span></span><h3>${escape(p.title)}</h3><div class="product-bottom"><strong>${money.format(p.price)}</strong>${p.favorite_count ? `<span class="fav-count" title="Personas que lo guardaron">${icon("heart")}${p.favorite_count}</span>` : ""}</div><div class="product-seller"><span class="mini-avatar">${escape(p.seller.slice(0, 1).toUpperCase())}</span><span>${escape(p.seller)}</span><span>·</span><span>${timeAgo(p.created_at)}</span></div></div></button><button class="favorite-button ${p.favorite ? "saved" : ""}" data-favorite="${p.id}" aria-label="${p.favorite ? "Quitar de" : "Guardar en"} favoritos: ${escape(p.title)}" aria-pressed="${!!p.favorite}">${icon("heart")}</button>${view === "mine" ? `<div class="card-management"><button data-edit="${p.id}">Editar</button><button data-status="${p.id}">${p.status === "sold" ? "Republicar" : "Marcar vendido"}</button></div>` : ""}</article>`,
     )
     .join("");
   imageFallback($("#products"));
@@ -351,9 +351,9 @@ function openPublish(product = null) {
     $("#publish-title").textContent = editing
       ? "Mejora tu publicación"
       : "Dale una nueva historia";
-    $("#publish-form [type=submit]").textContent = editing
-      ? "Guardar cambios"
-      : "Publicar producto";
+    $("#publish-form [type=submit]").innerHTML = editing
+      ? `Guardar cambios ${icon("arrow")}`
+      : `Publicar producto ${icon("arrow")}`;
     if (product)
       for (const key of [
         "title",
@@ -379,7 +379,10 @@ function setView(next) {
     view = next;
     resetFilters(false);
     loadProducts();
-    $("#catalog").scrollIntoView({ behavior: "smooth", block: "start" });
+    $("#catalog").scrollIntoView({
+      behavior: prefersReducedMotion ? "auto" : "smooth",
+      block: "start",
+    });
   };
   if (next !== "browse") requireLogin(action);
   else action();
@@ -487,7 +490,7 @@ function submitForm(form, action) {
     event.preventDefault();
     const button = form.querySelector("[type=submit]");
     button.disabled = true;
-    const label = button.textContent;
+    const label = button.innerHTML;
     button.textContent = "Guardando…";
     form.querySelector(".form-error").textContent = "";
     try {
@@ -496,7 +499,7 @@ function submitForm(form, action) {
       form.querySelector(".form-error").textContent = error.message;
     } finally {
       button.disabled = false;
-      button.textContent = label;
+      button.innerHTML = label;
     }
   });
 }
@@ -665,7 +668,14 @@ $("#load-more").addEventListener("click", () =>
 );
 document.querySelectorAll("dialog").forEach((dialog) =>
   dialog.addEventListener("click", (event) => {
-    if (event.target === dialog) dialog.close();
+    if (event.target !== dialog) return;
+    const rect = dialog.getBoundingClientRect();
+    const onBackdrop =
+      event.clientX < rect.left ||
+      event.clientX > rect.right ||
+      event.clientY < rect.top ||
+      event.clientY > rect.bottom;
+    if (onBackdrop) dialog.close();
   }),
 );
 const menuToggle = $("#menu-toggle");

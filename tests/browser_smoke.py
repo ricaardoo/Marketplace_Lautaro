@@ -79,7 +79,7 @@ with tempfile.TemporaryDirectory() as directory:
             page.locator('#profile-form [name=name]').fill('Nuevo nombre')
             page.locator('#profile-form [type=submit]').click()
             page.get_by_role('button', name='Nuevo nombre', exact=True).wait_for()
-            page.locator('.product-bottom').get_by_text('Nuevo nombre', exact=True).wait_for()
+            page.locator('.product-seller').get_by_text('Nuevo nombre', exact=True).wait_for()
             page.screenshot(path='/tmp/lautaro-improved-desktop.png', full_page=True)
             assert page.locator('body').evaluate('(el) => el.scrollWidth <= innerWidth')
             page.set_viewport_size({'width': 390, 'height': 844})
